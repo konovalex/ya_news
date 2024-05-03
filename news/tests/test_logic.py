@@ -4,8 +4,6 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.urls import reverse
 
-# Импортируем из файла с формами список стоп-слов и предупреждение формы.
-# Загляните в news/forms.py, разберитесь с их назначением.
 from news.forms import BAD_WORDS, WARNING
 from news.models import Comment, News
 
@@ -13,28 +11,28 @@ User = get_user_model()
 
 
 class TestCommentCreation(TestCase):
-    # Текст комментария понадобится в нескольких местах кода,
-    # поэтому запишем его в атрибуты класса.
+    """Тест создания комментария к новости."""
+
     COMMENT_TEXT = 'Текст комментария'
 
     @classmethod
     def setUpTestData(cls):
+        """Создаем новость и автора будущего комментария."""
         cls.news = News.objects.create(title='Заголовок', text='Текст')
-        # Адрес страницы с новостью.
-        cls.url = reverse('news:detail', args=(cls.news.id,))
-        # Создаём пользователя и клиент, логинимся в клиенте.
+        cls.url = reverse('news:detail', kwargs={'pk': cls.news.id})
         cls.user = User.objects.create(username='Мимо Крокодил')
         cls.auth_client = Client()
         cls.auth_client.force_login(cls.user)
-        # Данные для POST-запроса при создании комментария.
         cls.form_data = {'text': cls.COMMENT_TEXT}
 
     def test_anonymous_user_cant_create_comment(self):
+        """Анонимный пользователь не может создать комментарий."""
         self.client.post(self.url, data=self.form_data)
         comment_count = Comment.objects.count()
         self.assertEqual(comment_count, 0)
 
     def test_user_can_create_comment(self):
+        """Авторизованный пользователь может создать комментарий."""
         response = self.auth_client.post(self.url, data=self.form_data)
         self.assertRedirects(response, f'{self.url}#comments')
         comment_count = Comment.objects.count()
@@ -45,6 +43,7 @@ class TestCommentCreation(TestCase):
         self.assertEqual(comment.author, self.user)
 
     def test_user_cant_use_bad_words(self):
+        """В комментарии нельзя использовать запрещенные слова из списка."""
         bad_words_data = {'text': f'Какой-то текст, {BAD_WORDS[0]}, еще текст'}
         response = self.auth_client.post(self.url, data=bad_words_data)
         self.assertFormError(
@@ -58,11 +57,14 @@ class TestCommentCreation(TestCase):
 
 
 class TestCommentEditDelete(TestCase):
+    """Тест редактирования и удаления комментариев."""
+
     COMMENT_TEXT = 'Текст комментария'
     NEW_COMMENT_TEXT = 'Обновлённый комментарий'
 
     @classmethod
     def setUpTestData(cls):
+        """Создаем новость, автора комментария и читателя."""
         cls.news = News.objects.create(title='Заголовок', text='Текст')
         news_url = reverse('news:detail', kwargs={'pk': cls.news.id})
         cls.url_to_comment = news_url + '#comments'
@@ -82,25 +84,28 @@ class TestCommentEditDelete(TestCase):
         cls.form_data = {'text': cls.NEW_COMMENT_TEXT}
 
     def test_author_can_delete_comment(self):
+        """Автор комментария может удалить свой комментарий."""
         response = self.author_client.delete(self.delete_url)
         self.assertRedirects(response, self.url_to_comment)
         comments_count = Comment.objects.count()
         self.assertEqual(comments_count, 0)
 
     def test_user_cant_delete_comment_of_another_user(self):
+        """Ползователь не может удалить чужой комментарий."""
         response = self.reader_client.delete(self.delete_url)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
         comments_count = Comment.objects.count()
         self.assertEqual(comments_count, 1)
 
     def test_author_can_edit_comment(self):
+        """Автор комментария может редактировать свой комментарий."""
         response = self.author_client.post(self.edit_url, data=self.form_data)
-        print(response)
         self.assertRedirects(response, self.url_to_comment)
         self.comment.refresh_from_db()
         self.assertEqual(self.comment.text, self.NEW_COMMENT_TEXT)
 
     def test_user_cant_edit_comment_of_another_user(self):
+        """Пользователь не может редактировать чужой комментарий."""
         response = self.reader_client.post(self.edit_url, data=self.form_data)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
         self.comment.refresh_from_db()
